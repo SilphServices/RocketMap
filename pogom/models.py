@@ -1873,8 +1873,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'move_2': None
             }
 
-            height = -1
-            weight = -1
+            #height = -1
+            #weight = -1
             if (encounter_result is not None and 'wild_pokemon'
                     in encounter_result['responses']['ENCOUNTER']):
                 pokemon_info = encounter_result['responses'][
@@ -1889,8 +1889,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
                 })
-                height = pokemon_info.get('height_m', -1)
-                weight = pokemon_info.get('weight_kg', -1)
+                #height = pokemon_info.get('height_m', -1)
+                #weight = pokemon_info.get('weight_kg', -1)
 
             if args.webhooks:
 
@@ -1907,8 +1907,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'shiny': shiny,
                     'form': p['pokemon_data']['pokemon_display'].get('form', 0),
                     'gender': p['pokemon_data']['pokemon_display'].get('gender', 0),
-                    'height': height,
--                   'weight': weight
+                    #'height': height,
+-                   #'weight': weight
                 })
                 wh_update_queue.put(('pokemon', wh_poke))
 
