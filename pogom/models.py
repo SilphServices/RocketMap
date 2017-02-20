@@ -1840,7 +1840,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
             # Scan for IVs and moves.
             encounter_result = None
             shiny = p['pokemon_data']['pokemon_display'].get('shiny', False)
-            form = p['pokemon_data']['pokemon_display'].get('form', 0)
 
             should_encounter = (p['pokemon_data']['pokemon_id'] in args.encounter_whitelist) or (p['pokemon_data']['pokemon_id'] not in args.encounter_blacklist and not args.encounter_whitelist) or shiny
             if args.encounter and should_encounter:
@@ -1866,11 +1865,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'pokemon_id': p['pokemon_data']['pokemon_id'],
                 'latitude': p['latitude'],
                 'longitude': p['longitude'],
-                'shiny': shiny,
-                'form': form,
-                'gender': p['pokemon_data']['pokemon_display']['gender'],
-                #'height': p['pokemon_data']['height_m'],
-                #'weight': p['pokemon_data']['weight_kg'],
                 'disappear_time': disappear_time,
                 'individual_attack': None,
                 'individual_defense': None,
@@ -1879,6 +1873,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'move_2': None
             }
 
+            height = -1
+            weight = -1
             if (encounter_result is not None and 'wild_pokemon'
                     in encounter_result['responses']['ENCOUNTER']):
                 pokemon_info = encounter_result['responses'][
@@ -1893,6 +1889,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
                 })
+                height = pokemon_info.get('height_m', -1)
+                weight = pokemon_info.get('weight_kg', -1)
 
             if args.webhooks:
 
@@ -1905,7 +1903,12 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'verified': SpawnPoint.tth_found(sp),
                     'seconds_until_despawn': seconds_until_despawn,
                     'spawn_start': start_end[0],
-                    'spawn_end': start_end[1]
+                    'spawn_end': start_end[1],
+                    'shiny': shiny,
+                    'form': p['pokemon_data']['pokemon_display'].get('form', 0),
+                    'gender': p['pokemon_data']['pokemon_display'].get('gender', 0),
+                    'height': height,
+-                   'weight': weight
                 })
                 wh_update_queue.put(('pokemon', wh_poke))
 
