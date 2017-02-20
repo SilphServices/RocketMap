@@ -9,6 +9,7 @@ import threading
 from .utils import get_args
 from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
+import json
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +20,174 @@ wh_warning_threshold = 100
 wh_threshold_lifetime = int(5 * (wh_warning_threshold / 100.0))
 wh_lock = threading.Lock()
 
+globalDefault = 100
+globalFilter = {
+1: 90,
+2: 0,
+3: 0,
+4: 90,
+5: 0,
+6: 0,
+7: 90,
+8: 0,
+9: 0,
+25: 90,
+26: 0,
+31: 0,
+34: 0,
+38: 0,
+43: 90,
+44: 0,
+45: 0,
+58: 90,
+59: 0,
+60: 90,
+61: 0,
+62: 0,
+63: 90,
+64: 0,
+65: 0,
+66: 90,
+67: 0,
+68: 0,
+69: 90,
+70: 0,
+71: 0,
+74: 90,
+75: 0,
+76: 0,
+79: 90,
+80: 0,
+88: 0,
+89: 0,
+94: 0,
+95: 90,
+102: 90,
+103: 0,
+106: 0,
+107: 0,
+108: 90,
+111: 90,
+112: 0,
+113: 0,
+114: 0,
+123: 90,
+124: 90,
+125: 90,
+126: 90,
+127: 90,
+129: 98,
+130: 0,
+131: 0,
+132: 0,
+133: 90,
+134: 0,
+135: 0,
+136: 0,
+137: 0,
+138: 90,
+139: 0,
+140: 90,
+141: 0,
+142: 0,
+143: 0,
+144: 0,
+145: 0,
+146: 0,
+147: 0,
+148: 0,
+149: 0,
+150: 0,
+151: 0,
+152: 80,
+153: 0,
+154: 0,
+155: 80,
+156: 0,
+157: 0,
+158: 80,
+159: 0,
+160: 0,
+169: 80,
+170: 80,
+171: 80,
+172: 80,
+173: 80,
+174: 80,
+175: 80,
+176: 0,
+178: 80,
+179: 0,
+180: 0,
+181: 0,
+182: 0,
+183: 90,
+184: 0,
+185: 80,
+186: 0,
+187: 90,
+188: 0,
+189: 0,
+190: 90,
+191: 50,
+192: 0,
+193: 50,
+194: 90,
+195: 50,
+196: 0,
+197: 0,
+199: 0,
+200: 90,
+201: 0,
+202: 80,
+203: 80,
+204: 80,
+205: 50,
+206: 50,
+207: 80,
+208: 0,
+210: 50,
+211: 90,
+212: 0,
+213: 90,
+214: 0,
+215: 90,
+216: 80,
+217: 0,
+218: 50,
+219: 0,
+221: 90,
+222: 50,
+223: 80,
+224: 0,
+225: 0,
+226: 80,
+227: 80,
+228: 90,
+229: 0,
+230: 0,
+231: 80,
+232: 0,
+233: 0,
+234: 50,
+235: 0,
+236: 0,
+237: 0,
+238: 90,
+239: 90,
+240: 90,
+241: 0,
+242: 0,
+243: 0,
+244: 0,
+245: 0,
+246: 0,
+247: 0,
+248: 0,
+249: 0,
+250: 0,
+251: 0
+}
 
 def send_to_webhook(session, message_type, message):
     args = get_args()
@@ -30,9 +199,30 @@ def send_to_webhook(session, message_type, message):
 
     req_timeout = args.wh_timeout
 
+    if not message_type == 'pokemon':
+        log.info('Got post for non pokemon ' + message_type)
+        return
+
+    id = message.get("pokemon_id")
+    if not id:
+        log.info('Got post with no id ' + str(message))
+        return
+
+    shiny = message.get("shiny", False)
+    if id in args.encounter_blacklist and not shiny:
+        log.debug('filtering due to no IV or not shiny')
+        return
+
+    iv = ((int(message["individual_attack"]) + int(message["individual_defense"]) + int(message["individual_stamina"])) * 100) / 45
+
+    requirediv = globalFilter.get(id, globalDefault)
+    if iv < requirediv and not shiny:
+        log.info("PokemonID: " + str(id) + " | IV: " + str(iv) + " (too Low) | Required: " + str(requirediv) + ".")
+        return
+
+    jsonMessage = json.dumps(message)
     data = {
-        'type': message_type,
-        'message': message
+        'content': jsonMessage
     }
 
     for w in args.webhooks:

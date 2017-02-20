@@ -1839,11 +1839,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
             # Scan for IVs and moves.
             encounter_result = None
-            if (args.encounter and (p['pokemon_data']['pokemon_id']
-                                    in args.encounter_whitelist or
-                                    p['pokemon_data']['pokemon_id']
-                                    not in args.encounter_blacklist and
-                                    not args.encounter_whitelist)):
+            shiny = p['pokemon_data']['pokemon_display'].get('shiny', False)
+            form = p['pokemon_data']['pokemon_display'].get('form', 0)
+
+            should_encounter = (p['pokemon_data']['pokemon_id'] in args.encounter_whitelist) or (p['pokemon_data']['pokemon_id'] not in args.encounter_blacklist and not args.encounter_whitelist) or shiny
+            if args.encounter and should_encounter:
                 time.sleep(args.encounter_delay)
                 # Setup encounter request envelope.
                 req = api.create_request()
@@ -1866,6 +1866,11 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'pokemon_id': p['pokemon_data']['pokemon_id'],
                 'latitude': p['latitude'],
                 'longitude': p['longitude'],
+                'shiny': shiny,
+                'form': form,
+                'gender': p['pokemon_data']['pokemon_display']['gender'],
+                #'height': p['pokemon_data']['height_m'],
+                #'weight': p['pokemon_data']['weight_kg'],
                 'disappear_time': disappear_time,
                 'individual_attack': None,
                 'individual_defense': None,
