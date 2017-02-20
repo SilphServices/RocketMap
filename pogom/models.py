@@ -1906,9 +1906,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     'spawn_end': start_end[1],
                     'shiny': shiny,
                     'form': p['pokemon_data']['pokemon_display'].get('form', 0),
-                    'gender': p['pokemon_data']['pokemon_display'].get('gender', 0),
+                    'gender': p['pokemon_data']['pokemon_display'].get('gender', 0)
                     #'height': height,
--                   #'weight': weight
+                    #'weight': weight
                 })
                 wh_update_queue.put(('pokemon', wh_poke))
 
