@@ -12,18 +12,19 @@ import geopy
 import math
 from peewee import InsertQuery, \
     Check, CompositeKey, ForeignKeyField, \
-    IntegerField, CharField, DoubleField, BooleanField, \
+    SmallIntegerField, IntegerField, CharField, DoubleField, BooleanField, \
     DateTimeField, fn, DeleteQuery, FloatField, SQL, TextField, JOIN, \
     OperationalError
 from playhouse.flask_utils import FlaskDB
 from playhouse.pool import PooledMySQLDatabase
-from playhouse.shortcuts import RetryOperationalError
+from playhouse.shortcuts import RetryOperationalError, case
 from playhouse.migrate import migrate, MySQLMigrator, SqliteMigrator
 from playhouse.sqlite_ext import SqliteExtDatabase
 from datetime import datetime, timedelta
 from base64 import b64encode
 from cachetools import TTLCache
 from cachetools import cached
+from timeit import default_timer
 
 from . import config
 from .utils import get_pokemon_name, get_pokemon_rarity, get_pokemon_types, \
@@ -37,7 +38,7 @@ args = get_args()
 flaskDb = FlaskDB()
 cache = TTLCache(maxsize=100, ttl=60 * 5)
 
-db_schema_version = 13
+db_schema_version = 15
 
 
 class MyRetryDB(RetryOperationalError, PooledMySQLDatabase):
@@ -101,6 +102,9 @@ class Pokemon(BaseModel):
     individual_stamina = IntegerField(null=True)
     move_1 = IntegerField(null=True)
     move_2 = IntegerField(null=True)
+    weight = FloatField(null=True)
+    height = FloatField(null=True)
+    gender = SmallIntegerField(null=True)
     last_modified = DateTimeField(
         null=True, index=True, default=datetime.utcnow)
 
@@ -609,6 +613,7 @@ class Gym(BaseModel):
                        .where(GymMember.gym_id << gym_ids)
                        .where(GymMember.last_scanned > Gym.last_modified)
                        .order_by(GymMember.gym_id, GymPokemon.cp)
+                       .distinct()
                        .dicts())
 
             for p in pokemon:
@@ -671,6 +676,7 @@ class Gym(BaseModel):
                    .where(GymMember.gym_id == id)
                    .where(GymMember.last_scanned > Gym.last_modified)
                    .order_by(GymPokemon.cp.desc())
+                   .distinct()
                    .dicts())
 
         for p in pokemon:
@@ -851,16 +857,10 @@ class ScannedLocation(BaseModel):
                 'step': scan['step'], 'sp': sp_id}
 
     @classmethod
-    def get_by_locs(cls, locs):
-        lats, lons = [], []
-        for loc in locs:
-            lats.append(loc[0])
-            lons.append(loc[1])
-
+    def get_by_cellids(cls, cellids):
         query = (cls
                  .select()
-                 .where((ScannedLocation.latitude << lats) &
-                        (ScannedLocation.longitude << lons))
+                 .where(cls.cellid << cellids)
                  .dicts())
 
         d = {}
@@ -880,8 +880,7 @@ class ScannedLocation(BaseModel):
     def get_by_loc(cls, loc):
         query = (cls
                  .select()
-                 .where((ScannedLocation.latitude == loc[0]) &
-                        (ScannedLocation.longitude == loc[1]))
+                 .where(cls.cellid == cellid(loc))
                  .dicts())
 
         return query[0] if len(list(query)) else cls.new_loc(loc)
@@ -921,12 +920,12 @@ class ScannedLocation(BaseModel):
 
     # Return list of dicts for upcoming valid band times.
     @classmethod
-    def get_cell_to_linked_spawn_points(cls, cells):
+    def get_cell_to_linked_spawn_points(cls, cellids):
         query = (SpawnPoint
                  .select(SpawnPoint, cls.cellid)
                  .join(ScanSpawnPoint)
                  .join(cls)
-                 .where(cls.cellid << cells).dicts())
+                 .where(cls.cellid << cellids).dicts())
         l = list(query)
         ret = {}
         for item in l:
@@ -1026,14 +1025,16 @@ class ScannedLocation(BaseModel):
         return scan
 
     @classmethod
-    def bands_filled(cls, locations):
-        filled = 0
-        for e in locations:
-            sl = cls.get_by_loc(e[1])
-            bands = [sl['band' + str(i)] for i in range(1, 6)]
-            filled += reduce(lambda x, y: x + (y > -1), bands, 0)
-
-        return filled
+    def get_bands_filled_by_cellids(cls, cellids):
+        return int(cls
+                   .select(fn.SUM(case(cls.band1, ((-1, 0),), 1)
+                                  + case(cls.band2, ((-1, 0),), 1)
+                                  + case(cls.band3, ((-1, 0),), 1)
+                                  + case(cls.band4, ((-1, 0),), 1)
+                                  + case(cls.band5, ((-1, 0),), 1))
+                           .alias('band_count'))
+                   .where(cls.cellid << cellids)
+                   .scalar() or 0)
 
     @classmethod
     def reset_bands(cls, scan_loc):
@@ -1410,6 +1411,7 @@ class SpawnpointDetectionData(BaseModel):
         # Get past sightings.
         query = list(cls.select()
                         .where(cls.spawnpoint_id == sp['id'])
+                        .order_by(cls.scan_time.asc())
                         .dicts())
 
         if sighting:
@@ -1660,7 +1662,7 @@ class Token(flaskDb.Model):
                 if tokens:
                     log.debug('Retrived Token IDs: {}'.format(token_ids))
                     result = DeleteQuery(Token).where(
-                                 Token.id << token_ids).execute()
+                        Token.id << token_ids).execute()
                     log.debug('Deleted {} tokens.'.format(result))
         except OperationalError as e:
             log.error('Failed captcha token transactional query: {}'.format(e))
@@ -1870,7 +1872,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 'individual_defense': None,
                 'individual_stamina': None,
                 'move_1': None,
-                'move_2': None
+                'move_2': None,
+                'height': None,
+                'weight': None,
+                'gender': None
             }
 
             #height = -1
@@ -1888,6 +1893,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         'individual_stamina', 0),
                     'move_1': pokemon_info['move_1'],
                     'move_2': pokemon_info['move_2'],
+                    'height': pokemon_info['height_m'],
+                    'weight': pokemon_info['weight_kg'],
+                    'gender': pokemon_info['pokemon_display']['gender'],
                 })
                 #height = pokemon_info.get('height_m', -1)
                 #weight = pokemon_info.get('weight_kg', -1)
@@ -1929,7 +1937,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                 if 'active_fort_modifier' in f:
                     lure_expiration = (datetime.utcfromtimestamp(
                         f['last_modified_timestamp_ms'] / 1000.0) +
-                        timedelta(minutes=30))
+                        timedelta(minutes=args.lure_duration))
                     active_fort_modifier = f['active_fort_modifier']
                     if args.webhooks and args.webhook_updates_only:
                         wh_update_queue.put(('pokestop', {
@@ -2235,14 +2243,19 @@ def db_updater(args, q, db):
 
             # Loop the queue.
             while True:
+                last_upsert = default_timer()
                 model, data = q.get()
+
                 bulk_upsert(model, data, db)
                 q.task_done()
+
                 log.debug('Upserted to %s, %d records (upsert queue '
-                          'remaining: %d).',
+                          'remaining: %d) in %.2f seconds.',
                           model.__name__,
                           len(data),
-                          q.qsize())
+                          q.qsize(),
+                          default_timer() - last_upsert)
+
                 if q.qsize() > 50:
                     log.warning(
                         "DB queue is > 50 (@%d); try increasing --db-threads.",
@@ -2301,45 +2314,48 @@ def bulk_upsert(cls, data, db):
     i = 0
 
     if args.db_type == 'mysql':
-        step = 120
+        step = 250
     else:
         # SQLite has a default max number of parameters of 999,
         # so we need to limit how many rows we insert for it.
         step = 50
 
-    while i < num_rows:
-        log.debug('Inserting items %d to %d.', i, min(i + step, num_rows))
-        try:
-            # Turn off FOREIGN_KEY_CHECKS on MySQL, because it apparently is
-            # unable to recognize strings to update unicode keys for
-            # foriegn key fields, thus giving lots of foreign key constraint
-            # errors.
-            if args.db_type == 'mysql':
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+    with db.atomic():
+        while i < num_rows:
+            log.debug('Inserting items %d to %d.', i, min(i + step, num_rows))
+            try:
+                # Turn off FOREIGN_KEY_CHECKS on MySQL, because apparently it's
+                # unable to recognize strings to update unicode keys for
+                # foreign key fields, thus giving lots of foreign key
+                # constraint errors.
+                if args.db_type == 'mysql':
+                    db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
 
-            InsertQuery(cls, rows=data.values()[
-                        i:min(i + step, num_rows)]).upsert().execute()
+                # Use peewee's own implementation of the insert_many() method.
+                InsertQuery(cls, rows=data.values()[
+                            i:min(i + step, num_rows)]).upsert().execute()
 
-            if args.db_type == 'mysql':
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+                if args.db_type == 'mysql':
+                    db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
-        except Exception as e:
-            # If there is a DB table constraint error, dump the data and don't
-            # retry.
-            #
-            # Unrecoverable error strings:
-            unrecoverable = ['constraint', 'has no attribute',
-                             'peewee.IntegerField object at']
-            has_unrecoverable = filter(lambda x: x in str(e), unrecoverable)
-            if has_unrecoverable:
-                log.warning('%s. Data is:', repr(e))
-                log.warning(data.items())
-            else:
-                log.warning('%s... Retrying...', repr(e))
-                time.sleep(1)
-                continue
+            except Exception as e:
+                # If there is a DB table constraint error, dump the data and
+                # don't retry.
+                #
+                # Unrecoverable error strings:
+                unrecoverable = ['constraint', 'has no attribute',
+                                 'peewee.IntegerField object at']
+                has_unrecoverable = filter(
+                    lambda x: x in str(e), unrecoverable)
+                if has_unrecoverable:
+                    log.warning('%s. Data is:', repr(e))
+                    log.warning(data.items())
+                else:
+                    log.warning('%s... Retrying...', repr(e))
+                    time.sleep(1)
+                    continue
 
-        i += step
+            i += step
 
 
 def create_tables(db):
@@ -2480,3 +2496,22 @@ def database_migrate(db, old_ver):
 
         db.drop_tables([WorkerStatus])
         db.drop_tables([MainWorker])
+
+    if old_ver < 14:
+        migrate(
+            migrator.add_column('pokemon', 'weight',
+                                DoubleField(null=True, default=0)),
+            migrator.add_column('pokemon', 'height',
+                                DoubleField(null=True, default=0)),
+            migrator.add_column('pokemon', 'gender',
+                                IntegerField(null=True, default=0))
+        )
+
+    if old_ver < 15:
+        # we don't have to touch sqlite because it has REAL and INTEGER only
+        if args.db_type == 'mysql':
+            db.execute_sql('ALTER TABLE `pokemon` '
+                           'MODIFY COLUMN `weight` FLOAT NULL DEFAULT NULL,'
+                           'MODIFY COLUMN `height` FLOAT NULL DEFAULT NULL,'
+                           'MODIFY COLUMN `gender` SMALLINT NULL DEFAULT NULL'
+                           ';')

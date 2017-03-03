@@ -254,19 +254,19 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
             status = '{:21} | {:9} | {:9} | {:9}'
             status_text.append(status.format('Key', 'Remaining', 'Maximum',
                                              'Peak'))
+            if hash_key is not None:
+                for key in hash_key:
+                    key_instance = key_scheduler.keys[key]
+                    key_text = key
 
-            for key in hash_key:
-                key_instance = key_scheduler.keys[key]
-                key_text = key
+                    if key_scheduler.current() == key:
+                        key_text += '*'
 
-                if key_scheduler.current() == key:
-                    key_text += '*'
-
-                status_text.append(status.format(
-                    key_text,
-                    key_instance['remaining'],
-                    key_instance['maximum'],
-                    key_instance['peak']))
+                    status_text.append(status.format(
+                        key_text,
+                        key_instance['remaining'],
+                        key_instance['maximum'],
+                        key_instance['peak']))
 
         # Print the status_text for the current screen.
         status_text.append((
@@ -1113,7 +1113,8 @@ def search_worker_thread(args, account_queue, account_failures,
 
                 # Delay the desired amount after "scan" completion.
                 delay = scheduler.delay(status['last_scan_date'])
-                status['message'] += ', sleeping {}s until {}.'.format(
+
+                status['message'] += ' Sleeping {}s until {}.'.format(
                     delay,
                     time.strftime(
                         '%H:%M:%S',
@@ -1266,7 +1267,8 @@ def get_api_version(args):
             'https://pgorelease.nianticlabs.com/plfe/version',
             proxies=proxies,
             verify=False)
-        return r.text[2:] if r.status_code == requests.codes.ok else 0
+        return r.text[2:] if (r.status_code == requests.codes.ok and
+                              r.text[2:].count('.') == 2) else 0
     except Exception as e:
         log.warning('error on API check: %s', repr(e))
         return 0

@@ -67,6 +67,8 @@ var gymTypes = ['Uncontested', 'Mystic', 'Valor', 'Instinct']
 var gymPrestige = [2000, 4000, 8000, 12000, 16000, 20000, 30000, 40000, 50000]
 var audio = new Audio('static/sounds/ding.mp3')
 
+var GenderType = ['♂', '♀', '⚪']
+
 /*
   text place holders:
   <pkm> - pokemon name
@@ -158,7 +160,7 @@ function initMap() { // eslint-disable-line no-unused-vars
     map.mapTypes.set('style_light2', styleLight2)
 
     var stylePgo = new google.maps.StyledMapType(pGoStyle, {
-        name: 'PokemonGo'
+        name: 'RocketMap'
     })
     map.mapTypes.set('style_pgo', stylePgo)
 
@@ -173,17 +175,17 @@ function initMap() { // eslint-disable-line no-unused-vars
     map.mapTypes.set('style_light2_nl', styleLight2Nl)
 
     var stylePgoNl = new google.maps.StyledMapType(pGoStyleNoLabels, {
-        name: 'PokemonGo (No Labels)'
+        name: 'RocketMap (No Labels)'
     })
     map.mapTypes.set('style_pgo_nl', stylePgoNl)
 
     var stylePgoDay = new google.maps.StyledMapType(pGoStyleDay, {
-        name: 'PokemonGo Day'
+        name: 'RocketMap Day'
     })
     map.mapTypes.set('style_pgo_day', stylePgoDay)
 
     var stylePgoNight = new google.maps.StyledMapType(pGoStyleNight, {
-        name: 'PokemonGo Night'
+        name: 'RocketMap Night'
     })
     map.mapTypes.set('style_pgo_night', stylePgoNight)
 
@@ -391,7 +393,7 @@ function openMapDirections(lat, lng) { // eslint-disable-line no-unused-vars
     window.open(url, '_blank')
 }
 
-function pokemonLabel(name, rarity, types, disappearTime, id, latitude, longitude, encounterId, atk, def, sta, move1, move2) {
+function pokemonLabel(name, rarity, types, disappearTime, id, latitude, longitude, encounterId, atk, def, sta, move1, move2, weight, height, gender) {
     var disappearDate = new Date(disappearTime)
     var rarityDisplay = rarity ? '(' + rarity + ')' : ''
     var typesDisplay = ''
@@ -410,6 +412,13 @@ function pokemonLabel(name, rarity, types, disappearTime, id, latitude, longitud
             </div>
             <div>
                 Moves: ${pMove1} / ${pMove2}
+            </div>
+            `
+    }
+    if (gender != null) {
+        details += `
+            <div>
+                Gender: ${GenderType[gender - 1]} | Weight: ${weight.toFixed(2)}kg | Height: ${height.toFixed(2)}m
             </div>
             `
     }
@@ -708,7 +717,7 @@ function customizePokemonMarker(marker, item, skipNotification) {
     }
 
     marker.infoWindow = new google.maps.InfoWindow({
-        content: pokemonLabel(item['pokemon_name'], item['pokemon_rarity'], item['pokemon_types'], item['disappear_time'], item['pokemon_id'], item['latitude'], item['longitude'], item['encounter_id'], item['individual_attack'], item['individual_defense'], item['individual_stamina'], item['move_1'], item['move_2']),
+        content: pokemonLabel(item['pokemon_name'], item['pokemon_rarity'], item['pokemon_types'], item['disappear_time'], item['pokemon_id'], item['latitude'], item['longitude'], item['encounter_id'], item['individual_attack'], item['individual_defense'], item['individual_stamina'], item['move_1'], item['move_2'], item['weight'], item['height'], item['gender']),
         disableAutoPan: true
     })
 
